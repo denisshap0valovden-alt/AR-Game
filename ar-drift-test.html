@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AR Дрейф · Тест</title>
+<style>
+  :root{
+    --bg:#0d1016; --panel:#161a23; --panel2:#1d222d; --line:#2b3140;
+    --text:#eef1f5; --muted:#828b9c; --ok:#4ade80; --warn:#ffcf56; --bad:#ff5470; --acc:#3ec9ff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;user-select:none}
+
+  /* ---------- Pre-launch screen ---------- */
+  #intro{position:fixed;inset:0;overflow-y:auto;padding:22px 18px calc(22px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:16px}
+  h1{font-size:21px;margin:0;letter-spacing:-0.01em}
+  .lede{font-size:13.5px;line-height:1.55;color:var(--muted);margin:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h2{font-size:13px;margin:0 0 8px;color:var(--acc);font-weight:600}
+  .card ol,.card ul{margin:0;padding-left:18px;font-size:13px;line-height:1.65;color:var(--text)}
+  .card li{margin-bottom:5px}
+  .check{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5;padding:7px 0;border-bottom:1px solid var(--line)}
+  .check:last-child{border-bottom:none}
+  .check .st{flex-shrink:0;width:16px;height:16px;border-radius:50%;margin-top:1px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0d1016}
+  .st.y{background:var(--ok)} .st.n{background:var(--bad)} .st.q{background:var(--muted)}
+  button{font-family:inherit;font-weight:600;cursor:pointer;border:none}
+  .big{width:100%;padding:15px;border-radius:11px;font-size:15px;background:var(--acc);color:#07222e}
+  .big:disabled{background:var(--panel2);color:var(--muted)}
+  .ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+
+  /* ---------- AR overlay ---------- */
+  #overlay{position:fixed;inset:0;display:none;flex-direction:column;justify-content:space-between;pointer-events:none;padding:calc(10px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom))}
+  #overlay.on{display:flex}
+  .glass{background:rgba(13,16,22,0.82);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.09);border-radius:13px;pointer-events:auto}
+  .topbar{padding:10px 13px}
+  .statusline{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);margin-bottom:9px}
+  .led{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .led.ok{background:var(--ok);box-shadow:0 0 7px var(--ok)}
+  .led.bad{background:var(--bad)}
+  .readout{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .cell .k{font-size:9.5px;color:var(--muted);letter-spacing:0.05em;margin-bottom:2px}
+  .cell .v{font-size:19px;font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-0.02em}
+  .hero{padding:11px 13px;margin-top:8px;display:flex;align-items:baseline;justify-content:space-between}
+  .hero .k{font-size:11px;color:var(--muted)}
+  .hero .v{font-size:27px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+
+  .bottom{display:flex;flex-direction:column;gap:8px}
+  .guide{padding:10px 13px;font-size:12.5px;line-height:1.5;color:var(--text)}
+  .guide b{color:var(--acc);font-weight:600}
+  .btnrow{display:flex;gap:8px}
+  .btnrow button{flex:1;padding:14px 8px;border-radius:11px;font-size:13.5px;pointer-events:auto}
+  #bMark{background:var(--warn);color:#231a05}
+  #bOrigin{background:var(--acc);color:#07222e}
+  #bExit{flex:0 0 52px;background:rgba(255,84,112,0.16);color:var(--bad);border:1px solid rgba(255,84,112,0.35)}
+
+  /* ---------- Log sheet ---------- */
+  #log{position:fixed;inset:0;background:var(--bg);display:none;flex-direction:column;z-index:20}
+  #log.on{display:flex}
+  .loghead{padding:calc(14px + env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .loghead h2{font-size:16px;margin:0}
+  .logbody{flex:1;overflow-y:auto;padding:8px 16px}
+  .entry{padding:11px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;font-size:13px}
+  .entry .l{color:var(--muted);font-size:11.5px;margin-bottom:3px}
+  .entry .n{font-variant-numeric:tabular-nums;font-weight:600;text-align:right;white-space:nowrap}
+  .logfoot{padding:12px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px}
+  .logfoot button{flex:1;padding:13px;border-radius:10px;font-size:13px}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<!-- ============ INTRO ============ -->
+<div id="intro">
+  <div>
+    <h1>Тест дрейфа AR-координат</h1>
+    <p class="lede">Инструмент для Стадии&nbsp;0: измеряет, насколько «уплывает» система координат телефона за время игры. Нужен Android с Chrome и установленным ARCore.</p>
+  </div>
+
+  <div class="card">
+    <h2>Поддержка на этом устройстве</h2>
+    <div id="checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>Как проводить тест</h2>
+    <ol>
+      <li>Отметьте на полу точку — крестик из скотча. Это общее начало координат.</li>
+      <li>Поставьте телефон ровно на крестик, экраном вверх, и нажмите <b>Задать начало</b>.</li>
+      <li>Ходите по комнате 3–5 минут, как в реальной игре: повороты, быстрые движения, взгляд на пустые стены.</li>
+      <li>Вернитесь и поставьте телефон на тот же крестик. Нажмите <b>Замер</b>.</li>
+      <li>Показанная дистанция и есть накопленный дрейф. В идеале — единицы сантиметров.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Проверка двух телефонов</h2>
+    <p style="font-size:13px;line-height:1.6;margin:0;color:var(--text)">Запустите на обоих, откалибруйте оба на одном крестике. Разойдитесь по комнате и встаньте вплотную друг к другу в произвольной точке — координаты на экранах должны совпадать. Разница между ними — это и есть ошибка, с которой в игре разъедутся виртуальные кольца.</p>
+  </div>
+
+  <button class="big" id="start" disabled>Проверяю поддержку…</button>
+  <p class="lede" style="text-align:center;font-size:11.5px">Страницу нужно открыть по HTTPS — иначе браузер не даст доступ к AR.</p>
+</div>
+
+<!-- ============ AR OVERLAY ============ -->
+<div id="overlay">
+  <div>
+    <div class="glass topbar">
+      <div class="statusline"><span class="led" id="led"></span><span id="statusTxt">Инициализация</span><span style="margin-left:auto" id="clock">—</span></div>
+      <div class="readout">
+        <div class="cell"><div class="k">X</div><div class="v" id="vx">—</div></div>
+        <div class="cell"><div class="k">Y (высота)</div><div class="v" id="vy">—</div></div>
+        <div class="cell"><div class="k">Z</div><div class="v" id="vz">—</div></div>
+      </div>
+    </div>
+    <div class="glass hero">
+      <span class="k">Расстояние до начала</span>
+      <span class="v" id="vdist">—</span>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="glass guide" id="guide">Поставьте телефон на отметку и нажмите <b>Задать начало</b>.</div>
+    <div class="btnrow">
+      <button id="bExit" class="glass">✕</button>
+      <button id="bOrigin">Задать начало</button>
+      <button id="bMark">Замер</button>
+    </div>
+    <div class="btnrow">
+      <button id="bLog" class="glass" style="pointer-events:auto">Журнал замеров (<span id="logCount">0</span>)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ LOG ============ -->
+<div id="log">
+  <div class="loghead">
+    <h2>Журнал замеров</h2>
+    <button class="ghost" id="logClose" style="padding:8px 14px;border-radius:9px;font-size:13px">Закрыть</button>
+  </div>
+  <div class="logbody" id="logBody"></div>
+  <div class="logfoot">
+    <button class="ghost" id="logCopy">Скопировать</button>
+    <button class="ghost" id="logClear" style="color:var(--bad)">Очистить</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+// ---------- Support checks ----------
+const checksEl = document.getElementById('checks');
+const startBtn = document.getElementById('start');
+
+function addCheck(state, text){
+  const d = document.createElement('div');
+  d.className = 'check';
+  d.innerHTML = `<span class="st ${state}">${state==='y'?'✓':state==='n'?'✕':'?'}</span><span>${text}</span>`;
+  checksEl.appendChild(d);
+}
+
+async function runChecks(){
+  const secure = window.isSecureContext;
+  addCheck(secure?'y':'n', secure ? 'Защищённое соединение (HTTPS)' : 'Нет HTTPS — AR недоступен. Откройте страницу по https-адресу.');
+
+  const hasXR = 'xr' in navigator;
+  addCheck(hasXR?'y':'n', hasXR ? 'WebXR доступен в браузере' : 'WebXR не найден. Нужен Chrome на Android; в Safari на iOS работать не будет.');
+
+  let arOk = false;
+  if(hasXR){
+    try{ arOk = await navigator.xr.isSessionSupported('immersive-ar'); }catch(e){ arOk = false; }
+    addCheck(arOk?'y':'n', arOk ? 'Режим immersive-ar поддерживается' : 'Режим immersive-ar недоступен. Обычно помогает установка или обновление «Сервисов Google Play для AR».');
+  }
+
+  if(secure && hasXR && arOk){
+    startBtn.disabled = false;
+    startBtn.textContent = 'Запустить AR';
+  } else {
+    startBtn.textContent = 'AR недоступен';
+  }
+}
+runChecks();
+
+// ---------- Three.js ----------
+let renderer, scene, camera, session, refSpace;
+let originMatrix = null;     // world→origin transform
+let originSetAt = 0;
+let marks = [];
+let originGroup, trailGroup;
+
+function initGL(){
+  renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+  renderer.domElement.style.position='fixed';
+  renderer.domElement.style.inset='0';
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 40);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.6));
+
+  originGroup = new THREE.Group();
+  originGroup.visible = false;
+  scene.add(originGroup);
+
+  // origin cube
+  const cube = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12,0.12,0.12),
+    new THREE.MeshStandardMaterial({color:0x3ec9ff, emissive:0x0d5570, roughness:0.35})
+  );
+  cube.position.y = 0.06;
+  originGroup.add(cube);
+
+  // vertical beacon
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.006,0.006,2.2,8),
+    new THREE.MeshBasicMaterial({color:0x3ec9ff, transparent:true, opacity:0.35})
+  );
+  beam.position.y = 1.1;
+  originGroup.add(beam);
+
+  // concentric floor rings at 0.5 / 1 / 2 / 3 m
+  [0.5,1,2,3].forEach(r=>{
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(r-0.008, r+0.008, 72),
+      new THREE.MeshBasicMaterial({color:0xffcf56, transparent:true, opacity:0.42, side:THREE.DoubleSide})
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.002;
+    originGroup.add(ring);
+  });
+
+  // axis arrows
+  const ax = (dir,color)=>{
+    const g = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.004,0.004,0.5,6),
+      new THREE.MeshBasicMaterial({color})
+    );
+    g.position.copy(dir.clone().multiplyScalar(0.25));
+    g.position.y += 0.01;
+    g.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+    return g;
+  };
+  originGroup.add(ax(new THREE.Vector3(1,0,0), 0xff5470));
+  originGroup.add(ax(new THREE.Vector3(0,0,1), 0x4ade80));
+
+  trailGroup = new THREE.Group();
+  scene.add(trailGroup);
+
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ---------- Session ----------
+const overlay = document.getElementById('overlay');
+
+startBtn.onclick = async ()=>{
+  if(!renderer) initGL();
+  try{
+    session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures:['local-floor'],
+      optionalFeatures:['dom-overlay'],
+      domOverlay:{root: overlay}
+    });
+  }catch(e){
+    try{
+      session = await navigator.xr.requestSession('immersive-ar', {
+        optionalFeatures:['local','dom-overlay'],
+        domOverlay:{root: overlay}
+      });
+    }catch(e2){
+      alert('Не удалось запустить AR-сессию: ' + e2.message);
+      return;
+    }
+  }
+
+  document.getElementById('intro').style.display='none';
+  overlay.classList.add('on');
+
+  await renderer.xr.setSession(session);
+  try{ refSpace = renderer.xr.getReferenceSpace(); }catch(e){}
+
+  session.addEventListener('end', ()=>{
+    overlay.classList.remove('on');
+    document.getElementById('intro').style.display='flex';
+    session = null;
+  });
+
+  renderer.setAnimationLoop(tick);
+};
+
+// ---------- Live loop ----------
+const led = document.getElementById('led');
+const statusTxt = document.getElementById('statusTxt');
+const clockEl = document.getElementById('clock');
+const vx = document.getElementById('vx'), vy = document.getElementById('vy'), vz = document.getElementById('vz');
+const vdist = document.getElementById('vdist');
+const guide = document.getElementById('guide');
+
+let lastRel = new THREE.Vector3();
+let tracked = false;
+
+function tick(time, frame){
+  if(frame && refSpace){
+    const pose = frame.getViewerPose(refSpace);
+    tracked = !!pose;
+    if(pose){
+      led.className='led ok';
+      statusTxt.textContent = originMatrix ? 'Трекинг активен' : 'Трекинг активен · начало не задано';
+      const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
+      const p = new THREE.Vector3().setFromMatrixPosition(m);
+
+      if(originMatrix){
+        const rel = p.clone().applyMatrix4(originMatrix);
+        lastRel.copy(rel);
+        vx.textContent = rel.x.toFixed(2);
+        vy.textContent = rel.y.toFixed(2);
+        vz.textContent = rel.z.toFixed(2);
+        const d = Math.hypot(rel.x, rel.z);
+        vdist.textContent = d.toFixed(2)+' м';
+        const secs = Math.floor((performance.now()-originSetAt)/1000);
+        clockEl.textContent = Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+      }
+    } else {
+      led.className='led bad';
+      statusTxt.textContent = 'Трекинг потерян — наведите камеру на текстурную поверхность';
+    }
+  }
+  renderer.render(scene, camera);
+}
+
+// ---------- Actions ----------
+document.getElementById('bOrigin').onclick = ()=>{
+  if(!session || !refSpace) return;
+  session.requestAnimationFrame((t, frame)=>{
+    const pose = frame.getViewerPose(refSpace);
+    if(!pose){ guide.textContent='Трекинг не готов. Поводите телефоном над полом и попробуйте снова.'; return; }
+    const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
+    const p = new THREE.Vector3().setFromMatrixPosition(m);
+
+    // Origin = current position, projected onto the floor. Axes stay world-aligned
+    // so both phones share orientation via gravity + initial heading.
+    const originWorld = new THREE.Matrix4().makeTranslation(p.x, 0, p.z);
+    originMatrix = originWorld.clone().invert();
+    originSetAt = performance.now();
+
+    originGroup.position.set(p.x, 0, p.z);
+    originGroup.visible = true;
+    marks = [];
+    updateLog();
+    guide.innerHTML = 'Начало задано. Походите по комнате 3–5 минут, вернитесь на отметку и нажмите <b>Замер</b>.';
+  });
+};
+
+document.getElementById('bMark').onclick = ()=>{
+  if(!originMatrix){ guide.innerHTML='Сначала нажмите <b>Задать начало</b>.'; return; }
+  const secs = Math.round((performance.now()-originSetAt)/1000);
+  const d = Math.hypot(lastRel.x, lastRel.z);
+  marks.push({
+    t: secs,
+    x: lastRel.x, y: lastRel.y, z: lastRel.z,
+    d, tracked
+  });
+
+  // drop a small persistent dot where the mark was taken
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 12, 12),
+    new THREE.MeshBasicMaterial({color:0xffcf56})
+  );
+  dot.position.set(originGroup.position.x + lastRel.x, 0.03, originGroup.position.z + lastRel.z);
+  trailGroup.add(dot);
+
+  updateLog();
+  guide.innerHTML = `Замер №${marks.length}: <b>${d.toFixed(2)} м</b> от начала. Если телефон стоит на отметке — это накопленный дрейф.`;
+};
+
+document.getElementById('bExit').onclick = ()=>{ if(session) session.end(); };
+
+// ---------- Log ----------
+const logEl = document.getElementById('log');
+const logBody = document.getElementById('logBody');
+const logCount = document.getElementById('logCount');
+
+function updateLog(){
+  logCount.textContent = marks.length;
+  if(marks.length===0){
+    logBody.innerHTML = '<div class="empty">Замеров пока нет.<br>Задайте начало, походите по комнате и вернитесь на отметку.</div>';
+    return;
+  }
+  logBody.innerHTML = '';
+  marks.forEach((m,i)=>{
+    const mins = Math.floor(m.t/60)+':'+String(m.t%60).padStart(2,'0');
+    const d = document.createElement('div');
+    d.className='entry';
+    d.innerHTML = `<div><div class="l">Замер ${i+1} · через ${mins}${m.tracked?'':' · трекинг был потерян'}</div>
+      X ${m.x.toFixed(2)} · Y ${m.y.toFixed(2)} · Z ${m.z.toFixed(2)}</div>
+      <div class="n" style="color:${m.d<0.1?'var(--ok)':m.d<0.3?'var(--warn)':'var(--bad)'}">${(m.d*100).toFixed(0)} см</div>`;
+    logBody.appendChild(d);
+  });
+}
+updateLog();
+
+document.getElementById('bLog').onclick = ()=>logEl.classList.add('on');
+document.getElementById('logClose').onclick = ()=>logEl.classList.remove('on');
+document.getElementById('logClear').onclick = ()=>{
+  marks=[];
+  while(trailGroup.children.length) trailGroup.remove(trailGroup.children[0]);
+  updateLog();
+};
+document.getElementById('logCopy').onclick = async ()=>{
+  const txt = marks.map((m,i)=>`${i+1}\t${m.t}s\tx=${m.x.toFixed(3)}\ty=${m.y.toFixed(3)}\tz=${m.z.toFixed(3)}\td=${m.d.toFixed(3)}m`).join('\n');
+  try{ await navigator.clipboard.writeText(txt); alert('Скопировано в буфер обмена'); }
+  catch(e){ alert(txt); }
+};
+</script>
+</body>
+</html>
